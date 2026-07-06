@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist fragment for the macOS build. electron-builder generates the full
+  Info.plist and merges the `mac.extendInfo` keys from electron-builder.yml
+  (LSUIElement, NSMicrophoneUsageDescription). This file documents the keys the
+  app relies on and can be used as a reference / override source. See
+  cross_plat_design §7.1.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Menu-bar agent: no Dock icon. -->
+    <key>LSUIElement</key>
+    <true/>
+    <!-- Shown in the TCC prompt on first microphone capture. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Dictation needs microphone access to record and transcribe your speech.</string>
+    <!-- Shown if Apple Events (osascript paste injection) are used. -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Dictation uses automation to paste transcribed text into the focused app.</string>
+</dict>
+</plist>

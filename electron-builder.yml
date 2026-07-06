@@ -1,0 +1,49 @@
+# electron-builder configuration — packages the app for macOS and Linux.
+# See the cross-platform design doc §9 (packaging) for context. M0 only needs a
+# valid config; real signing/notarization lands in M5.
+appId: com.dictation.app
+productName: Dictation
+copyright: Copyright © 2026
+
+# Ship the compiled JS, the tray icons, and package.json. Source TS is not bundled.
+files:
+  - dist/**/*
+  - assets/**/*
+  - package.json
+
+directories:
+  buildResources: build
+  output: release
+
+# ---------------------------------------------------------------------------
+# macOS: menu-bar agent (no Dock icon), microphone entitlement, hardened runtime.
+# ---------------------------------------------------------------------------
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+  # Universal build so it runs on Apple Silicon and Intel.
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    # LSUIElement=true → menu-bar-only agent, no Dock icon.
+    LSUIElement: true
+    NSMicrophoneUsageDescription: >-
+      Dictation needs microphone access to record and transcribe your speech.
+
+# ---------------------------------------------------------------------------
+# Linux: AppImage + .deb, productivity category.
+# ---------------------------------------------------------------------------
+linux:
+  category: Utility
+  target:
+    - AppImage
+    - deb
+  synopsis: Hotkey-driven speech-to-text
+  description: >-
+    Cross-platform hotkey dictation. Press a key to record; the transcript is
+    inserted at the cursor or copied to the clipboard.

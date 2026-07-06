@@ -1,0 +1,21 @@
+<!doctype html>
+<!--
+  Hidden recorder renderer — STUB for M0.
+  In M1 this is the ONLY window that calls getUserMedia. It captures audio,
+  downsamples to 16 kHz mono in an AudioWorklet, emits live RMS for the overlay
+  meter, and returns a WAV ArrayBuffer on stop via `window.recorder`
+  (see src/preload/recorder.ts). No-mic guard: getUserMedia rejection surfaces
+  "No microphone" before "Listening". cross_plat_design §5.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Dictation recorder</title>
+  </head>
+  <body>
+    <script>
+      // M1: window.recorder.onStart -> getUserMedia + worklet; onStop -> WAV.
+      console.log('[recorder] stub loaded');
+    </script>
+  </body>
+</html>

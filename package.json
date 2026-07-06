@@ -8,14 +8,18 @@
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
-    "start": "npm run build && electron .",
-    "dev": "npm run build && electron . --enable-logging",
+    "start": "pnpm run build && electron .",
+    "dev": "pnpm run build && electron . --enable-logging",
     "clean": "rimraf dist",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dist": "pnpm run build && electron-builder",
+    "dist:linux": "pnpm run build && electron-builder --linux",
+    "dist:mac": "pnpm run build && electron-builder --mac"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
     "rimraf": "^6.0.1",
     "typescript": "^5.7.2"
   },

@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  Dashboard / settings renderer — STUB for M0.
+  In M3 this ports the daemon's DASHBOARD_HTML almost verbatim (productivity
+  stats, history with click-to-copy, engine/endpoint/model settings), swapping
+  fetch('/api/*') for the `window.api.*` bridge (see src/preload/dashboard.ts).
+  cross_plat_design §6 (Dashboard).
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dictation Dashboard</title>
+    <style>
+      body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0e1014; color: #e6e8ee; }
+      .wrap { max-width: 880px; margin: 0 auto; padding: 24px; }
+      .sub { color: #9aa3b2; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Dictation Dashboard</h1>
+      <p class="sub">Settings, stats, and history land in M3.</p>
+    </div>
+    <script>
+      // M3: call window.api.stats()/history()/getSettings()/saveSettings().
+      console.log('[dashboard] stub loaded');
+    </script>
+  </body>
+</html>

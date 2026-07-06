@@ -1,0 +1,24 @@
+<!doctype html>
+<!--
+  Overlay (pill) renderer — STUB for M0.
+  In M1 this becomes a frameless, transparent, click-through, non-focusable
+  window that draws the status pill on a <canvas>, animated from the state + live
+  RMS pushed over `window.overlay` (see src/preload/overlay.ts). It must never
+  steal focus (keeps guard_focus intact). cross_plat_design §6 (Overlay).
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Dictation overlay</title>
+    <style>
+      html, body { margin: 0; background: transparent; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <canvas id="pill"></canvas>
+    <script>
+      // M1: subscribe to window.overlay.onState / onDismiss and render the pill.
+      console.log('[overlay] stub loaded');
+    </script>
+  </body>
+</html>

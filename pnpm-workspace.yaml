@@ -1,0 +1,6 @@
+# pnpm blocks dependency build scripts by default. Allow the ones we trust so
+# `pnpm install` runs Electron's postinstall (downloads the Electron binary).
+allowBuilds:
+  electron: true
+  electron-builder: true
+  esbuild: true
