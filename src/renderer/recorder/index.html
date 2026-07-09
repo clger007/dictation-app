@@ -1,11 +1,10 @@
 <!doctype html>
 <!--
-  Hidden recorder renderer — STUB for M0.
-  In M1 this is the ONLY window that calls getUserMedia. It captures audio,
-  downsamples to 16 kHz mono in an AudioWorklet, emits live RMS for the overlay
-  meter, and returns a WAV ArrayBuffer on stop via `window.recorder`
-  (see src/preload/recorder.ts). No-mic guard: getUserMedia rejection surfaces
-  "No microphone" before "Listening". cross_plat_design §5.
+  Hidden recorder renderer — the ONLY window that calls getUserMedia.
+  main sends recorder:start {device, tailMs} -> capture; recorder:stop -> after
+  tailMs, downsample to 16 kHz mono, encode 16-bit PCM WAV, return the buffer
+  via window.recorder.sendWav. Errors (no mic / permission denied) surface via
+  sendError BEFORE "started" is reported. cross_plat_design §5.
 -->
 <html>
   <head>
@@ -14,8 +13,139 @@
   </head>
   <body>
     <script>
-      // M1: window.recorder.onStart -> getUserMedia + worklet; onStop -> WAV.
-      console.log('[recorder] stub loaded');
+      const TARGET_RATE = 16000;
+
+      let ctx = null;
+      let stream = null;
+      let source = null;
+      let proc = null;
+      let chunks = [];
+      let capturing = false;
+
+      async function pickDeviceId(device) {
+        if (!device || device === 'default') return undefined;
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const want = device.toLowerCase();
+          const hit = devices.find(
+            (d) => d.kind === 'audioinput' && (d.label || '').toLowerCase().includes(want),
+          );
+          return hit ? hit.deviceId : undefined;
+        } catch {
+          return undefined;
+        }
+      }
+
+      async function start(opts) {
+        if (capturing) return;
+        chunks = [];
+        try {
+          const deviceId = await pickDeviceId(opts && opts.device);
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+            video: false,
+          });
+          ctx = new AudioContext();
+          source = ctx.createMediaStreamSource(stream);
+          // ScriptProcessorNode is deprecated but universally supported and
+          // sufficient for speech capture; an AudioWorklet swap is transparent.
+          proc = ctx.createScriptProcessor(4096, 1, 1);
+          proc.onaudioprocess = (e) => {
+            if (!capturing) return;
+            const data = e.inputBuffer.getChannelData(0);
+            chunks.push(new Float32Array(data));
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+            window.recorder.sendRms(Math.sqrt(sum / data.length));
+          };
+          source.connect(proc);
+          proc.connect(ctx.destination);
+          capturing = true;
+          window.recorder.sendStarted();
+        } catch (err) {
+          cleanup();
+          window.recorder.sendError(String((err && err.message) || err));
+        }
+      }
+
+      function stop(tailMs) {
+        if (!capturing) {
+          window.recorder.sendError('not recording');
+          return;
+        }
+        // Keep the tail so trailing words aren't clipped.
+        setTimeout(() => {
+          capturing = false;
+          const rate = ctx ? ctx.sampleRate : TARGET_RATE;
+          cleanup();
+          try {
+            const wav = encodeWav(mergeAndResample(chunks, rate, TARGET_RATE), TARGET_RATE);
+            chunks = [];
+            window.recorder.sendWav(wav);
+          } catch (err) {
+            window.recorder.sendError('wav encode: ' + String((err && err.message) || err));
+          }
+        }, Math.max(0, tailMs | 0));
+      }
+
+      function cleanup() {
+        try { if (proc) { proc.disconnect(); proc.onaudioprocess = null; } } catch {}
+        try { if (source) source.disconnect(); } catch {}
+        try { if (stream) stream.getTracks().forEach((t) => t.stop()); } catch {}
+        try { if (ctx) ctx.close(); } catch {}
+        proc = source = stream = ctx = null;
+      }
+
+      function mergeAndResample(parts, fromRate, toRate) {
+        let total = 0;
+        for (const p of parts) total += p.length;
+        const merged = new Float32Array(total);
+        let off = 0;
+        for (const p of parts) { merged.set(p, off); off += p.length; }
+        if (fromRate === toRate || total === 0) return merged;
+        const ratio = fromRate / toRate;
+        const out = new Float32Array(Math.floor(total / ratio));
+        for (let i = 0; i < out.length; i++) {
+          const pos = i * ratio;
+          const i0 = Math.floor(pos);
+          const i1 = Math.min(i0 + 1, total - 1);
+          const frac = pos - i0;
+          out[i] = merged[i0] * (1 - frac) + merged[i1] * frac;
+        }
+        return out;
+      }
+
+      function encodeWav(samples, rate) {
+        const buf = new ArrayBuffer(44 + samples.length * 2);
+        const v = new DataView(buf);
+        const writeStr = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+        writeStr(0, 'RIFF');
+        v.setUint32(4, 36 + samples.length * 2, true);
+        writeStr(8, 'WAVE');
+        writeStr(12, 'fmt ');
+        v.setUint32(16, 16, true);
+        v.setUint16(20, 1, true); // PCM
+        v.setUint16(22, 1, true); // mono
+        v.setUint32(24, rate, true);
+        v.setUint32(28, rate * 2, true);
+        v.setUint16(32, 2, true);
+        v.setUint16(34, 16, true);
+        writeStr(36, 'data');
+        v.setUint32(40, samples.length * 2, true);
+        let o = 44;
+        for (let i = 0; i < samples.length; i++, o += 2) {
+          const s = Math.max(-1, Math.min(1, samples[i]));
+          v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        }
+        return buf;
+      }
+
+      let tailMs = 250;
+      window.recorder.onStart((opts) => {
+        tailMs = (opts && opts.tailMs) || 250;
+        start(opts);
+      });
+      window.recorder.onStop(() => stop(tailMs));
     </script>
   </body>
 </html>

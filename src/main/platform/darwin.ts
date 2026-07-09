@@ -1,10 +1,16 @@
-// DarwinAdapter — macOS focus/window/insertion via osascript / AXUIElement.
+// DarwinAdapter — macOS focus detection + text insertion.
 //
-// M0 STUB: interface-complete, no real injection yet. The real port lands in M2
-// (osascript "keystroke v using command down" or nut.js ⌘V; frontmost app via
-// AXUIElement). On macOS ⌘V is universal, so there is no terminal special-case
-// (cross_plat_design §4.1). insert() falls back to the clipboard for now.
-import { setClipboard } from '../clipboard';
+// Insertion = clipboard + synthesized ⌘V ("keystroke v using command down" via
+// System Events), which is Unicode-safe (CJK/emoji) where AppleScript's
+// `keystroke <text>` is not — so "type" mode also delivers via paste on macOS
+// (⌘V is universal here; no terminal special-case, cross_plat_design §4.1).
+// Synthetic keystrokes need the Accessibility permission; without it (or when
+// guard_focus sees the frontmost app changed) we fall back to the clipboard and
+// report why in the destination label.
+import { systemPreferences, shell } from 'electron';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { getClipboard, setClipboard } from '../clipboard';
 import { log } from './../logger';
 import type {
   FocusTarget,
@@ -13,27 +19,86 @@ import type {
   PlatformAdapter,
 } from './adapter';
 
+const run = promisify(execFile);
+
+async function osascript(script: string): Promise<string> {
+  const { stdout } = await run('/usr/bin/osascript', ['-e', script], { timeout: 5000 });
+  return stdout.trim();
+}
+
+/** Bundle id of the frontmost app ('' when it can't be determined). */
+async function frontmostBundleId(): Promise<string> {
+  try {
+    return await osascript(
+      'tell application "System Events" to get bundle identifier of first process whose frontmost is true',
+    );
+  } catch (e) {
+    log.warn('frontmost app lookup failed:', e);
+    return '';
+  }
+}
+
 export class DarwinAdapter implements PlatformAdapter {
   readonly name = 'darwin';
+  private axPromptShown = false;
 
   async getFocusedTarget(): Promise<FocusTarget> {
-    // M2: frontmost app bundle id via AXUIElement / osascript.
-    return { id: '', appId: '', isTerminal: false, isEditable: null };
+    const bundleId = await frontmostBundleId();
+    return { id: bundleId, appId: bundleId, isTerminal: false, isEditable: null };
   }
 
-  async insert(text: string, _opts: InsertOptions): Promise<string> {
-    // M2: osascript/nut.js ⌘V with guard_focus. Clipboard-only for now.
-    log.warn('DarwinAdapter.insert stub — copying to clipboard (M2 will inject)');
-    return setClipboard(text) ? 'clipboard' : 'failed';
+  async insert(text: string, opts: InsertOptions): Promise<string> {
+    if (!setClipboard(text)) return 'failed';
+    if (opts.mode === 'clipboard') return 'clipboard';
+
+    // guard_focus: only inject if the same app is still frontmost.
+    if (opts.guardWindow) {
+      const now = await frontmostBundleId();
+      if (now && now !== opts.guardWindow) {
+        log.info(`guard_focus: frontmost changed (${opts.guardWindow} -> ${now}); clipboard only`);
+        return 'clipboard (focus changed)';
+      }
+    }
+
+    // Synthetic ⌘V needs Accessibility. Prompt once, fall back to clipboard.
+    if (!systemPreferences.isTrustedAccessibilityClient(false)) {
+      if (!this.axPromptShown) {
+        this.axPromptShown = true;
+        systemPreferences.isTrustedAccessibilityClient(true); // system prompt
+      }
+      return 'clipboard (needs Accessibility permission)';
+    }
+
+    const previous = opts.restoreClipboard ? getClipboard() : null;
+    try {
+      await osascript('tell application "System Events" to keystroke "v" using command down');
+    } catch (e) {
+      log.error('synthetic paste failed:', e);
+      return 'clipboard (paste failed)';
+    }
+    if (opts.restoreClipboard && previous !== null) {
+      await new Promise((r) => setTimeout(r, Math.max(50, opts.pasteWaitMs ?? 150)));
+      setClipboard(previous);
+    }
+    return 'pasted';
   }
 
   async checkPermissions(): Promise<PermissionState> {
-    // M5 onboarding wires these to systemPreferences.getMediaAccessStatus /
-    // isTrustedAccessibilityClient. Unknown until then.
-    return { microphone: 'unknown', accessibility: 'unknown', tools: 'not-required' };
+    const mic = systemPreferences.getMediaAccessStatus('microphone');
+    return {
+      microphone:
+        mic === 'granted' ? 'granted' : mic === 'denied' ? 'denied' : 'unknown',
+      accessibility: systemPreferences.isTrustedAccessibilityClient(false)
+        ? 'granted'
+        : 'denied',
+      tools: 'not-required', // osascript ships with macOS
+    };
   }
 
   async requestPermissions(): Promise<void> {
-    // M5: deep-link to the Microphone / Accessibility Settings panes.
+    systemPreferences.isTrustedAccessibilityClient(true);
+    await shell.openExternal(
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+    );
   }
 }

@@ -37,6 +37,7 @@ export interface AudioConfig {
   max_seconds: number;
   latency_msec: number;
   tail_ms: number;
+  chunk_seconds: number; // long recordings are split into ~this many seconds/chunk
 }
 
 export interface LocalConfig {
@@ -65,11 +66,19 @@ export interface OutputConfig {
   paste_wait_ms: number;
 }
 
+export type CleanupLevel = 'light' | 'standard' | 'fluent';
+
 export interface CleanupConfig {
   enabled: boolean;
   provider: string; // currently only "openai"
   model: string;
-  prompt: string; // "" = built-in default
+  prompt: string; // "" = built-in default for the selected level
+  level: CleanupLevel; // how aggressively to polish the transcript
+}
+
+export interface TranslateConfig {
+  key: string; // hotkey combo; "" = unbound
+  target: string; // target language, e.g. "English"
 }
 
 export interface HistoryConfig {
@@ -94,6 +103,7 @@ export interface AppConfig {
   cloud: CloudConfig;
   output: OutputConfig;
   cleanup: CleanupConfig;
+  translate: TranslateConfig;
   history: HistoryConfig;
   ui: UiConfig;
 }
@@ -132,12 +142,15 @@ key = "f9"
 [audio]
 # Input device. "default" = system default input.
 device = "default"
-# Safety cap so a stuck key can't record forever.
-max_seconds = 120
+# Safety cap so a stuck key can't record forever (3600 = up to an hour).
+max_seconds = 3600
 # Capture latency in ms (legacy tuning; the Electron audio path owns its buffer).
 latency_msec = 50
 # Keep recording this many ms after you press stop, so trailing words are kept.
 tail_ms = 250
+# Long recordings are split at quiet points into chunks of about this many
+# seconds and transcribed with parallel API calls, then merged in order.
+chunk_seconds = 60
 
 [local]
 model = "large-v3"       # large-v3, medium, small, base, tiny
@@ -186,8 +199,21 @@ paste_wait_ms = 150
 enabled = false
 provider = "openai"       # currently only "openai"
 model = "gpt-4o-mini"
-# Leave prompt = "" to use the built-in cleanup instruction.
+# How aggressively to polish the transcript:
+#   "light"    -> punctuation/capitalization + drop fillers, keep wording
+#   "standard" -> also fix grammar and word-order slips (good for non-native speech)
+#   "fluent"   -> rewrite into natural, native-sounding phrasing (meaning preserved)
+level = "light"
+# Leave prompt = "" to use the built-in instruction for the selected level.
 prompt = ""
+
+[translate]
+# Translate mode: press this hotkey, speak any language, and the TRANSLATION of
+# what you said (into the target language below) is delivered instead.
+# "" = unbound. Set it from the dashboard (e.g. "f10", "fn", "ctrl+shift+t").
+key = ""
+# Target language for translate mode.
+target = "English"
 
 [history]
 # Append every transcript to an append-only JSONL log.
@@ -240,6 +266,7 @@ function normalize(root: Raw): AppConfig {
   const c = section(root, 'cloud');
   const o = section(root, 'output');
   const cl = section(root, 'cleanup');
+  const t = section(root, 'translate');
   const h = section(root, 'history');
   const u = section(root, 'ui');
   return {
@@ -255,9 +282,10 @@ function normalize(root: Raw): AppConfig {
     },
     audio: {
       device: str(a.device, 'default'),
-      max_seconds: num(a.max_seconds, 120),
+      max_seconds: num(a.max_seconds, 3600),
       latency_msec: num(a.latency_msec, 50),
       tail_ms: num(a.tail_ms, 250),
+      chunk_seconds: Math.max(2, num(a.chunk_seconds, 60)),
     },
     local: {
       model: str(l.model, 'large-v3'),
@@ -285,6 +313,11 @@ function normalize(root: Raw): AppConfig {
       provider: str(cl.provider, 'openai'),
       model: str(cl.model, 'gpt-4o-mini'),
       prompt: str(cl.prompt, ''),
+      level: oneOf(cl.level, ['light', 'standard', 'fluent'] as const, 'light'),
+    },
+    translate: {
+      key: str(t.key, ''),
+      target: str(t.target, 'English'),
     },
     history: {
       enabled: bool(h.enabled, true),
@@ -311,11 +344,18 @@ function tomlQuote(value: string): string {
   return '"' + value.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
 }
 
+export type TomlScalar = string | number | boolean;
+
+/** Serialize a scalar for a `key = ...` line (strings quoted, others bare). */
+function tomlSerialize(value: TomlScalar): string {
+  return typeof value === 'string' ? tomlQuote(value) : String(value);
+}
+
 export function setTomlValue(
   text: string,
   sectionName: string,
   key: string,
-  value: string,
+  value: TomlScalar,
 ): { text: string; done: boolean } {
   const out: string[] = [];
   let cur: string | null = null;
@@ -328,12 +368,45 @@ export function setTomlValue(
     const m = /^\[([^\]]+)\]/.exec(s);
     if (m) cur = m[1];
     if (!done && cur === sectionName && keyRe.test(s)) {
-      line = `${key} = ${tomlQuote(value)}\n`;
+      line = `${key} = ${tomlSerialize(value)}\n`;
       done = true;
     }
     out.push(line);
   }
   return { text: out.join(''), done };
+}
+
+/**
+ * Add `key = "value"` to [section], appending right after the section's last
+ * key (before the next section header) — or appending a new [section] at EOF.
+ */
+export function appendTomlValue(
+  text: string,
+  sectionName: string,
+  key: string,
+  value: TomlScalar,
+): string {
+  const entry = `${key} = ${tomlSerialize(value)}\n`;
+  const lines = text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+  let cur: string | null = null;
+  let insertAt = -1; // line index AFTER the target section's last non-blank line
+  for (let i = 0; i < lines.length; i++) {
+    const s = lines[i].trim();
+    const m = /^\[([^\]]+)\]/.exec(s);
+    if (m) {
+      if (cur === sectionName) break; // hit the next section; insertAt is final
+      cur = m[1];
+      if (cur === sectionName) insertAt = i + 1;
+      continue;
+    }
+    if (cur === sectionName && s) insertAt = i + 1;
+  }
+  if (insertAt < 0) {
+    const sep = text.endsWith('\n') || text === '' ? '' : '\n';
+    return `${text}${sep}\n[${sectionName}]\n${entry}`;
+  }
+  lines.splice(insertAt, 0, entry);
+  return lines.join('');
 }
 
 // --------------------------------------------------------------------------- //
@@ -395,12 +468,17 @@ export class Config {
 
   /**
    * Rewrite a single key inline, preserving comments (dashboard save path).
+   * If the key (or its whole section) is missing — e.g. a config written by an
+   * older version — it is appended instead, so saves never silently vanish.
    * Reloads the in-memory config afterward and locks the file to 0600 (it may
    * contain the API key). Returns whether the key existed and was replaced.
    */
-  async setValue(sectionName: string, key: string, value: string): Promise<boolean> {
+  async setValue(sectionName: string, key: string, value: TomlScalar): Promise<boolean> {
     const raw = await readFile(this.path, 'utf-8');
-    const { text, done } = setTomlValue(raw, sectionName, key, value);
+    let { text, done } = setTomlValue(raw, sectionName, key, value);
+    if (!done) {
+      text = appendTomlValue(text, sectionName, key, value);
+    }
     await writeFile(this.path, text, 'utf-8');
     await chmod(this.path, 0o600).catch(() => undefined);
     await this.reload();

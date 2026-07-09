@@ -10,6 +10,13 @@ export interface SaveSettingsInput {
   base_url?: string;
   model?: string;
   api_key?: string;
+  hotkey_key?: string;
+  hotkey_mode?: string;
+  translate_key?: string;
+  translate_target?: string;
+  language_mode?: string;
+  cleanup_enabled?: boolean;
+  cleanup_level?: string;
 }
 
 const api = {
@@ -18,6 +25,8 @@ const api = {
   getSettings: () => ipcRenderer.invoke(IPC.dashboard.getSettings),
   saveSettings: (input: SaveSettingsInput) =>
     ipcRenderer.invoke(IPC.dashboard.saveSettings, input),
+  captureHotkey: (): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.dashboard.captureHotkey),
 };
 
 contextBridge.exposeInMainWorld('api', api);

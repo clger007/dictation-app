@@ -6,3 +6,10 @@ out/
 .env
 .DS_Store
 Thumbs.db
+
+# compiled event-tap helper (built by scripts/build-keytap.mjs)
+assets/keytap
+
+# never commit configs — they can hold API keys
+config.toml
+*.local.toml

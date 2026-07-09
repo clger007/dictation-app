@@ -1,14 +1,15 @@
 // Preload for the overlay (pill) renderer. Exposes a minimal, typed API over the
 // contextBridge — contextIsolation:true, nodeIntegration:false, no Node in the
-// renderer. M0 stub: the overlay renderer itself lands in M1; this defines the
-// bridge the pill will consume (state + dismiss pushed from main).
+// renderer. Main pushes full state changes and rms-only level updates on the
+// same channel; either field may be absent.
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '../main/ipc';
 
 export interface OverlayState {
-  state: 'listening' | 'transcribing' | 'info' | 'error';
-  text: string;
+  state?: 'listening' | 'transcribing' | 'info' | 'error';
+  text?: string;
   rms?: number;
+  variant?: 'dictate' | 'translate';
 }
 
 const api = {

@@ -1,10 +1,8 @@
 <!doctype html>
 <!--
-  Overlay (pill) renderer — STUB for M0.
-  In M1 this becomes a frameless, transparent, click-through, non-focusable
-  window that draws the status pill on a <canvas>, animated from the state + live
-  RMS pushed over `window.overlay` (see src/preload/overlay.ts). It must never
-  steal focus (keeps guard_focus intact). cross_plat_design §6 (Overlay).
+  Overlay pill renderer — a click-through status capsule. Receives
+  {state, text, rms} pushes on window.overlay.onState (rms may arrive alone)
+  and a fade-out signal on onDismiss. Never focusable; pure display.
 -->
 <html>
   <head>
@@ -12,13 +10,79 @@
     <title>Dictation overlay</title>
     <style>
       html, body { margin: 0; background: transparent; overflow: hidden; }
+      #pill {
+        display: flex; align-items: center; gap: 10px;
+        margin: 8px auto; width: fit-content; max-width: 330px;
+        padding: 10px 18px; border-radius: 999px;
+        background: rgba(18, 20, 26, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+        font: 600 13px/1.2 system-ui, sans-serif; color: #e6e8ee;
+        opacity: 0; transition: opacity 0.2s ease;
+        white-space: nowrap;
+      }
+      #pill.show { opacity: 1; }
+      #dot {
+        width: 10px; height: 10px; border-radius: 50%; flex: none;
+        background: #f43f5e;
+      }
+      #pill.listening #dot { background: #f43f5e; animation: pulse 1.2s infinite; }
+      #pill.transcribing #dot { background: #a78bfa; animation: spin-pulse 0.9s infinite; }
+      #pill.info #dot { background: #34d399; animation: none; }
+      #pill.error #dot { background: #f87171; animation: none; }
+      /* translate mode: cool blue identity so the two modes read differently */
+      #pill.translate.listening #dot { background: #38bdf8; }
+      #pill.translate.listening #meter div { background: #38bdf8; }
+      #pill.translate.transcribing #dot { background: #22d3ee; }
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.45); opacity: 0.6; }
+      }
+      @keyframes spin-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.35; }
+      }
+      #label { overflow: hidden; text-overflow: ellipsis; }
+      #meter { display: flex; align-items: center; gap: 2px; height: 16px; flex: none; }
+      #meter div {
+        width: 3px; height: 4px; border-radius: 2px; background: #f43f5e;
+        transition: height 0.08s ease;
+      }
+      #pill:not(.listening) #meter { display: none; }
     </style>
   </head>
   <body>
-    <canvas id="pill"></canvas>
+    <div id="pill">
+      <div id="dot"></div>
+      <div id="label">…</div>
+      <div id="meter"><div></div><div></div><div></div><div></div><div></div></div>
+    </div>
     <script>
-      // M1: subscribe to window.overlay.onState / onDismiss and render the pill.
-      console.log('[overlay] stub loaded');
+      const pill = document.getElementById('pill');
+      const label = document.getElementById('label');
+      const bars = Array.from(document.querySelectorAll('#meter div'));
+      let level = 0; // smoothed rms
+
+      window.overlay.onState((s) => {
+        if (s.state) {
+          pill.className = 'show ' + s.state + (s.variant === 'translate' ? ' translate' : '');
+          label.textContent = s.text || '';
+          if (s.state !== 'listening') level = 0;
+        }
+        if (typeof s.rms === 'number') {
+          // Smooth + expand the (quiet-speech) rms range into a 0..1 meter.
+          const target = Math.min(1, s.rms * 9);
+          level = level * 0.6 + target * 0.4;
+          bars.forEach((b, i) => {
+            const gate = (i + 1) / (bars.length + 1);
+            b.style.height = 4 + Math.max(0, level - gate * 0.28) * 22 + 'px';
+          });
+        }
+      });
+
+      window.overlay.onDismiss(() => {
+        pill.classList.remove('show');
+      });
     </script>
   </body>
 </html>

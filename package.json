@@ -7,7 +7,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs && node scripts/build-keytap.mjs",
     "start": "pnpm run build && electron .",
     "dev": "pnpm run build && electron . --enable-logging",
     "clean": "rimraf dist",

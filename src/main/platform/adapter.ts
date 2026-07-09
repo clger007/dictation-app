@@ -18,6 +18,8 @@ export interface FocusTarget {
 export interface InsertOptions {
   mode: OutputMode;
   guardWindow?: string; // divert to clipboard if focus moved (guard_focus)
+  restoreClipboard?: boolean; // put the previous clipboard back after pasting
+  pasteWaitMs?: number; // how long to let the paste land before restoring
 }
 
 /** Granted/denied/not-applicable state for each capability we need. */

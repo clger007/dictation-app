@@ -9,6 +9,8 @@ export const IPC = {
     // main -> renderer: begin/stop capture
     start: 'recorder:start',
     stop: 'recorder:stop',
+    // renderer -> main: capture actually began (getUserMedia succeeded)
+    started: 'recorder:started',
     // renderer -> main: a finished WAV buffer (ArrayBuffer)
     wav: 'recorder:wav',
     // renderer -> main: live RMS level for the meter
@@ -31,6 +33,8 @@ export const IPC = {
     history: 'dashboard:history',
     getSettings: 'dashboard:getSettings',
     saveSettings: 'dashboard:saveSettings',
+    // press-to-record: resolves with the next key combo the user presses
+    captureHotkey: 'dashboard:captureHotkey',
   },
 } as const;
 

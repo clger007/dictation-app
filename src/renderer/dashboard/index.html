@@ -1,10 +1,8 @@
 <!doctype html>
 <!--
-  Dashboard / settings renderer — STUB for M0.
-  In M3 this ports the daemon's DASHBOARD_HTML almost verbatim (productivity
-  stats, history with click-to-copy, engine/endpoint/model settings), swapping
-  fetch('/api/*') for the `window.api.*` bridge (see src/preload/dashboard.ts).
-  cross_plat_design §6 (Dashboard).
+  Dashboard / settings renderer. Talks to main exclusively through the
+  window.api.* contextBridge (src/preload/dashboard.ts): getSettings /
+  saveSettings / stats / history. cross_plat_design §6.
 -->
 <html>
   <head>
@@ -12,19 +10,288 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Dictation Dashboard</title>
     <style>
-      body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0e1014; color: #e6e8ee; }
-      .wrap { max-width: 880px; margin: 0 auto; padding: 24px; }
-      .sub { color: #9aa3b2; }
+      :root {
+        --bg: #0e1014; --panel: #171a21; --line: #262b36;
+        --text: #e6e8ee; --sub: #9aa3b2; --accent: #8b5cf6;
+        --ok: #34d399; --err: #f87171;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+      .wrap { max-width: 880px; margin: 0 auto; padding: 20px 24px 40px; }
+      h1 { font-size: 20px; margin: 8px 0 2px; }
+      h2 { font-size: 14px; margin: 26px 0 10px; color: var(--sub); text-transform: uppercase; letter-spacing: .06em; }
+      .sub { color: var(--sub); margin: 0 0 8px; }
+      .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+      .row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+      .field { flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px; }
+      label { color: var(--sub); font-size: 12px; }
+      input, select {
+        background: #0b0d11; color: var(--text); border: 1px solid var(--line);
+        border-radius: 7px; padding: 8px 10px; font: inherit; width: 100%;
+      }
+      input:focus, select:focus { outline: none; border-color: var(--accent); }
+      button {
+        background: var(--accent); color: white; border: 0; border-radius: 7px;
+        padding: 9px 18px; font: inherit; font-weight: 600; cursor: pointer;
+      }
+      button:hover { filter: brightness(1.1); }
+      button.rec {
+        background: #262b36; padding: 8px 10px; font-weight: 500; flex: none;
+        border: 1px solid var(--line);
+      }
+      button.rec.arming { background: #7f1d1d; border-color: #b91c1c; }
+      #save-status { margin-left: 12px; }
+      #save-status.ok { color: var(--ok); }
+      #save-status.err { color: var(--err); }
+      .stats { display: flex; gap: 12px; flex-wrap: wrap; }
+      .stat { flex: 1 1 140px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+      .stat .num { font-size: 24px; font-weight: 700; }
+      .stat .lbl { color: var(--sub); font-size: 12px; }
+      ul.hist { list-style: none; margin: 0; padding: 0; }
+      ul.hist li {
+        padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      ul.hist li:hover { background: #1c2029; }
+      ul.hist li .ts { color: var(--sub); font-size: 12px; margin-right: 8px; }
+      .hint { color: var(--sub); font-size: 12px; }
+      code { background: #0b0d11; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <h1>Dictation Dashboard</h1>
-      <p class="sub">Settings, stats, and history land in M3.</p>
+      <h1>🎙️ Dictation</h1>
+      <p class="sub">Hotkey: <code id="hotkey">…</code> · Delivery: <code id="output-mode">…</code></p>
+
+      <h2>Settings</h2>
+      <div class="panel">
+        <div class="row">
+          <div class="field" style="flex: 0 1 160px">
+            <label for="engine">Engine</label>
+            <select id="engine">
+              <option value="cloud">cloud</option>
+              <option value="local">local (not available yet)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="model">Model</label>
+            <input id="model" placeholder="gpt-4o-transcribe" />
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="base-url">Base URL (empty = api.openai.com)</label>
+            <input id="base-url" placeholder="https://api.openai.com/v1" />
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="api-key">API key <span id="key-state" class="hint"></span></label>
+            <input id="api-key" type="password" autocomplete="off" placeholder="sk-…  (leave empty to keep the current key)" />
+          </div>
+        </div>
+        <div class="row">
+          <div class="field" style="flex: 0 1 130px">
+            <label for="language-mode">Spoken language</label>
+            <select id="language-mode">
+              <option value="auto">auto-detect</option>
+              <option value="bilingual">English + 中文 (mixed)</option>
+              <option value="en">English only</option>
+              <option value="zh">中文 only</option>
+            </select>
+          </div>
+          <div class="field" style="flex: 0 1 130px">
+            <label for="cleanup-enabled">Polish transcript (LLM)</label>
+            <select id="cleanup-enabled">
+              <option value="off">off — raw transcript</option>
+              <option value="on">on</option>
+            </select>
+          </div>
+          <div class="field" style="flex: 0 1 200px">
+            <label for="cleanup-level">Polish strength</label>
+            <select id="cleanup-level">
+              <option value="light">light — punctuation & fillers</option>
+              <option value="standard">standard — also fix grammar</option>
+              <option value="fluent">fluent — native-like rewrite</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <h2>Hotkeys</h2>
+      <div class="panel">
+        <p class="hint" id="native-hint" style="margin-top:0"></p>
+        <div class="row">
+          <div class="field" style="flex: 0 1 240px">
+            <label for="hotkey-key">🎙️ Dictation hotkey</label>
+            <div style="display:flex; gap:6px">
+              <input id="hotkey-key" placeholder="f9" />
+              <button type="button" class="rec" data-target="hotkey-key">⏺ Record</button>
+            </div>
+          </div>
+          <div class="field" style="flex: 0 1 240px">
+            <label for="translate-key">🌐 Translate hotkey (empty = off)</label>
+            <div style="display:flex; gap:6px">
+              <input id="translate-key" placeholder="e.g. f10 or fn" />
+              <button type="button" class="rec" data-target="translate-key">⏺ Record</button>
+            </div>
+          </div>
+          <div class="field" style="flex: 0 1 170px">
+            <label for="translate-target">Translate into</label>
+            <input id="translate-target" placeholder="English" />
+          </div>
+          <div class="field" style="flex: 0 1 190px">
+            <label for="hotkey-mode">Trigger style</label>
+            <select id="hotkey-mode">
+              <option value="toggle">toggle — press to start/stop</option>
+              <option value="hold">hold to talk — release to finish</option>
+            </select>
+          </div>
+        </div>
+        <p class="hint" style="margin-bottom:0">
+          Click ⏺ Record, then press the key or combination you want — including the
+          <b>fn</b> key. Typing a name (f9, ctrl+shift+d, fn) works too.
+        </p>
+      </div>
+
+      <div class="row" style="align-items: center; margin: 16px 0 0">
+        <button id="save">Save</button>
+        <span id="save-status"></span>
+      </div>
+
+      <h2>Stats</h2>
+      <div class="stats">
+        <div class="stat"><div class="num" id="stat-today">0</div><div class="lbl">words today</div></div>
+        <div class="stat"><div class="num" id="stat-words">0</div><div class="lbl">words total</div></div>
+        <div class="stat"><div class="num" id="stat-dict">0</div><div class="lbl">dictations total</div></div>
+      </div>
+
+      <h2>Recent transcripts <span class="hint">(click to copy)</span></h2>
+      <div class="panel" style="padding: 4px 8px">
+        <ul class="hist" id="hist"><li class="hint">loading…</li></ul>
+      </div>
     </div>
+
     <script>
-      // M3: call window.api.stats()/history()/getSettings()/saveSettings().
-      console.log('[dashboard] stub loaded');
+      const $ = (id) => document.getElementById(id);
+
+      async function loadSettings() {
+        const s = await window.api.getSettings();
+        $('engine').value = s.engine || 'cloud';
+        $('model').value = s.model || '';
+        $('base-url').value = s.base_url || '';
+        $('hotkey').textContent = s.hotkey || 'f9';
+        $('hotkey-key').value = s.hotkey_key || 'f9';
+        $('hotkey-mode').value = s.hotkey_mode || 'toggle';
+        $('translate-key').value = s.translate_key || '';
+        $('translate-target').value = s.translate_target || 'English';
+        $('language-mode').value = s.language_mode || 'auto';
+        $('cleanup-enabled').value = s.cleanup_enabled ? 'on' : 'off';
+        $('cleanup-level').value = s.cleanup_level || 'light';
+        $('output-mode').textContent = s.output_mode || '';
+        $('key-state').textContent = s.api_key_masked
+          ? '— saved: ' + s.api_key_masked + ' (loaded automatically; leave blank to keep)'
+          : '— not set';
+        $('api-key').value = '';
+        $('native-hint').textContent = s.native_keys
+          ? '✓ Native key capture is active — ⏺ Record works, and fn / hold-to-talk are available.'
+          : '⚠ Native key capture unavailable — grant Accessibility (System Settings → Privacy & Security) and restart the app to enable ⏺ Record, the fn key, and hold-to-talk.';
+      }
+
+      // Press-to-record hotkey capture.
+      document.querySelectorAll('button.rec').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const input = $(btn.dataset.target);
+          const old = input.value;
+          btn.classList.add('arming');
+          btn.textContent = '… press keys';
+          input.value = '';
+          input.placeholder = 'press the key(s) now…';
+          try {
+            const combo = await window.api.captureHotkey();
+            input.value = combo || old;
+            if (!combo) input.placeholder = 'capture unavailable — type it instead';
+          } finally {
+            btn.classList.remove('arming');
+            btn.textContent = '⏺ Record';
+          }
+        });
+      });
+
+      async function loadStats() {
+        const st = await window.api.stats();
+        const today = new Date().toISOString().slice(0, 10);
+        const d = (st.days || []).find((x) => x.date === today);
+        $('stat-today').textContent = d ? d.words : 0;
+        $('stat-words').textContent = st.total_words || 0;
+        $('stat-dict').textContent = st.total_dictations || 0;
+      }
+
+      async function loadHistory() {
+        const items = await window.api.history(30);
+        const ul = $('hist');
+        ul.innerHTML = '';
+        if (!items.length) {
+          ul.innerHTML = '<li class="hint">No transcripts yet — press the hotkey and speak.</li>';
+          return;
+        }
+        for (const e of items) {
+          const li = document.createElement('li');
+          const ts = document.createElement('span');
+          ts.className = 'ts';
+          ts.textContent = (e.ts || '').replace('T', ' ');
+          li.appendChild(ts);
+          li.appendChild(document.createTextNode(e.text || ''));
+          li.title = 'Click to copy';
+          li.addEventListener('click', () => {
+            navigator.clipboard.writeText(e.text || '');
+            li.style.background = '#243b2e';
+            setTimeout(() => (li.style.background = ''), 350);
+          });
+          ul.appendChild(li);
+        }
+      }
+
+      async function save() {
+        const status = $('save-status');
+        status.textContent = 'saving…';
+        status.className = '';
+        const input = {
+          engine: $('engine').value,
+          model: $('model').value,
+          base_url: $('base-url').value,
+          hotkey_key: $('hotkey-key').value.trim(),
+          hotkey_mode: $('hotkey-mode').value,
+          translate_key: $('translate-key').value.trim(),
+          translate_target: $('translate-target').value.trim(),
+          language_mode: $('language-mode').value,
+          cleanup_enabled: $('cleanup-enabled').value === 'on',
+          cleanup_level: $('cleanup-level').value,
+        };
+        const key = $('api-key').value.trim();
+        if (key) input.api_key = key;
+        try {
+          const res = await window.api.saveSettings(input);
+          if (res && res.ok) {
+            status.textContent = 'saved ✓';
+            status.className = 'ok';
+            await loadSettings();
+          } else {
+            status.textContent = 'error: ' + ((res && res.error) || 'unknown');
+            status.className = 'err';
+          }
+        } catch (err) {
+          status.textContent = 'error: ' + err;
+          status.className = 'err';
+        }
+      }
+
+      $('save').addEventListener('click', save);
+      loadSettings();
+      loadStats();
+      loadHistory();
+      // Keep stats/history fresh while the window is open.
+      setInterval(() => { loadStats(); loadHistory(); }, 5000);
     </script>
   </body>
 </html>

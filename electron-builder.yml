@@ -11,6 +11,10 @@ files:
   - assets/**/*
   - package.json
 
+# The keytap helper is a real executable — it can't run from inside the asar.
+asarUnpack:
+  - assets/keytap
+
 directories:
   buildResources: build
   output: release
