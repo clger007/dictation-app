@@ -2,6 +2,8 @@
 
 # 🎙️ Dictation
 
+**English** · [中文](README.zh-CN.md)
+
 **Cross-platform, hotkey-driven speech-to-text for macOS and Linux.**
 
 Press a key, speak, and your words are transcribed and inserted right at the cursor —
