@@ -1,3 +1,4 @@
+<!-- readme: {"emoji": "🎙️", "en": "Hotkey speech-to-text for macOS and Linux.", "zh": "macOS 和 Linux 上按快捷键的语音转文字。", "status": "dev", "lang": "TypeScript", "vis": "public", "url": "", "tags": ["speech-to-text", "dictation", "electron", "macos", "linux"], "custom": true} -->
 <div align="center" markdown="1">
 
 # 🎙️ Dictation
