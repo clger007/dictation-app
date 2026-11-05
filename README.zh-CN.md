@@ -1,4 +1,4 @@
-<div align="center">
+<div align="center" markdown="1">
 
 # 🎙️ Dictation
 
@@ -16,7 +16,11 @@ LLM 清理，修正标点、去掉口头禅。
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Status](https://img.shields.io/badge/status-M0%20skeleton-orange.svg)](#路线图)
 
+[![speech-to-text](https://img.shields.io/badge/speech--to--text-57606a?style=flat-square)](https://github.com/topics/speech-to-text) [![dictation](https://img.shields.io/badge/dictation-57606a?style=flat-square)](https://github.com/topics/dictation) [![electron](https://img.shields.io/badge/electron-57606a?style=flat-square)](https://github.com/topics/electron) [![macos](https://img.shields.io/badge/macos-57606a?style=flat-square)](https://github.com/topics/macos) [![linux](https://img.shields.io/badge/linux-57606a?style=flat-square)](https://github.com/topics/linux)
+
 </div>
+
+**目录：** [概览](#概览) · [功能](#功能) · [架构](#架构) · [技术栈](#技术栈) · [前置要求](#前置要求) · [快速开始](#快速开始) · [配置](#配置) · [项目结构](#项目结构) · [路线图](#路线图) · [参与贡献](#参与贡献) · [许可证](#许可证)
 
 ---
 

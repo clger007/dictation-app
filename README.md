@@ -1,4 +1,4 @@
-<div align="center">
+<div align="center" markdown="1">
 
 # 🎙️ Dictation
 
@@ -16,7 +16,11 @@ optional LLM cleanup pass that fixes punctuation and drops filler words.
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Status](https://img.shields.io/badge/status-M0%20skeleton-orange.svg)](#roadmap)
 
+[![speech-to-text](https://img.shields.io/badge/speech--to--text-57606a?style=flat-square)](https://github.com/topics/speech-to-text) [![dictation](https://img.shields.io/badge/dictation-57606a?style=flat-square)](https://github.com/topics/dictation) [![electron](https://img.shields.io/badge/electron-57606a?style=flat-square)](https://github.com/topics/electron) [![macos](https://img.shields.io/badge/macos-57606a?style=flat-square)](https://github.com/topics/macos) [![linux](https://img.shields.io/badge/linux-57606a?style=flat-square)](https://github.com/topics/linux)
+
 </div>
+
+**Contents:** [Overview](#overview) · [Features](#features) · [Architecture](#architecture) · [Tech stack](#tech-stack) · [Prerequisites](#prerequisites) · [Quick start](#quick-start) · [Configuration](#configuration) · [Project structure](#project-structure) · [Roadmap](#roadmap) · [Contributing](#contributing) · [License](#license)
 
 ---
 
